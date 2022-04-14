@@ -2,15 +2,13 @@ import express from "express"
 import http from "http"
 import cors from "cors"
 import { Server } from "socket.io"
+import mongoose from "mongoose"
+import mongoTop from "mongodb-topology-manager"
 
 // CONSTANTS
 const PORT = 4000
-const REDIS_URL = "redis://localhost:6379"
-const playerToken = "player"
-const hostToken = "host"
 
 // SERVER
-
 const app = express()
 app.use(cors)
 const server = http.createServer(app)
@@ -20,130 +18,166 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 })
+app.io = io
 
-// Connection stuff
-
-// Auth
-io.use((socket, next) => {
-  // auth the initial connection
-  if (socket.handshake.auth && socket.handshake.auth.code) {
-    if (socket.handshake.auth.code === playerToken) {
-      // connect as player
-      socket.join("players")
-      socket.emit("connected-as", "player")
-      next()
-    } else if (socket.handshake.auth.code === hostToken) {
-      // connect as host
-      socket.join("host")
-      socket.emit("connected-as", "host")
-      next()
-    } else {
-      // return auth error
-      next(new Error("authentication error"))
-    }
-  } else {
-    // return auth error
-    next(new Error("authentication error"))
-  }
+// MONGO STUFF
+let primary = mongoose.createConnection("mongodb://localhost:27017/codesdb", {
+  useNewUrlParser: true,
 })
+// let repl = mongoose.createConnection("repl", { useNewUrlParser: true })
 
-// once connected
+// const Event = repl.model(
+//   "Events",
+//   {
+//     _id: String,
+//     team: String,
+//     event: String,
+//   },
+//   "viewer-events"
+// )
+
+const Room = primary.model(
+  "Room",
+  {
+    name: { type: String },
+    host: { type: String },
+    player: { type: String },
+    peerHost: { type: String },
+    peerPath: { type: String },
+    peerPort: { type: String },
+    socketURL: { type: String },
+  },
+  "codes"
+)
+const PrimaryUser = primary.model(
+  "User",
+  {
+    _id: String,
+    type: String,
+    streamerName: String,
+    gameName: String,
+    attributes: {
+      kills: Number,
+      placement: Number,
+    },
+    active: Boolean,
+  },
+  "users"
+)
+const PrimaryTeam = primary.model(
+  "Team",
+  {
+    name: String,
+    createdBy: String,
+    players: [String],
+  },
+  "teams"
+)
+
+// Event.watch().on("change", (data) => {
+//   console.log(data)
+//   // io.emit("viewer-event", data)
+// })
+
+///////////////////////////////////////////////////////////////////
+// Socket Setup
+//   Server Recieves
+//     submit-add-team
+//     submit-del-team
+//     update-user
+//     change-mute
+//   Server Sends
+//     connected-as
+//     add-user
+//     delete-user
+//     change-mute
+//     add-team
+//     delete-team
+//     viewer-event-mute
+///////////////////////////////////////////////////////////////////
+
 io.on("connection", (socket) => {
-  // TEAM STUFF
-
-  socket.on("ready", () => {
-    socket.broadcast.emit("player-ready", { socketID: socket.id })
+  // initialize
+  console.log(socket.handshake.auth.userId)
+  console.log(socket.handshake.auth.roomcode)
+  Room.findOne({ name: socket.handshake.auth.roomcode }).then((data) => {
+    if (!data) {
+      socket.disconnect()
+    } else {
+      PrimaryUser.find({
+        _id: { $ne: socket.handshake.auth.userId },
+        active: true,
+      }).then((users) => {
+        PrimaryTeam.find().then((teams) => {
+          socket.emit("connected-init", {
+            users: users,
+            teams: teams,
+            eventSettings: {
+              timeout: 2000,
+            },
+          })
+        })
+      })
+    }
+  })
+  // save to DB
+  PrimaryUser.findOne({ _id: socket.handshake.auth.userId }).then((data) => {
+    if (data) {
+      PrimaryUser.findOneAndUpdate(
+        {
+          _id: socket.handshake.auth.userId,
+        },
+        {
+          active: true,
+        }
+      )
+    } else {
+      const newUser = new PrimaryUser({
+        _id: socket.handshake.auth.userId,
+        type: socket.handshake.auth.type,
+        streamerName: "",
+        gameName: "",
+        attributes: {
+          kills: 0,
+          placement: 0,
+        },
+        active: true,
+      })
+      newUser.save()
+    }
   })
 
-  socket.on("set-name", (name) => {
-    // emit name and socket name to all people on server
-    socket.broadcast.emit("set-user-name", {
-      username: name,
-      socketId: socket.id,
-    })
+  // Server Recieves
+  socket.on("submit-add-team", (data) => {
+    // save to mongo
+    // broadcast to all
+  })
+  socket.on("submit-del-team", (data) => {
+    // delete from mongo
+    // broadcast to all
+  })
+  socket.on("update-user", (data) => {
+    // save to mongo
+    // broadcast add-user to all
+  })
+  socket.on("change-mute", (data) => {
+    // broadcast to all
   })
 
-  socket.on("join-team", (teamUUID, audioStream) => {
-    // disconnect from any other teams (other than players and self)
-    socket.join(teamUUID)
-    // send audio to all in team
-    socket.to(teamUUID).emit("player-joined-audio", audioStream)
-    // send team-join notification to all
-    socket.broadcast.emit("player-joined-team", {
-      socketID: socket.id,
-      teamID: teamUUID,
-    })
-  })
-
-  socket.on("send-player-audio", (audioStream, socketID) => {
-    socket.to(socketID).emit("join-my-audio", audioStream)
-  })
-
-  socket.on("leave-team", (teamUUID) => {
-    // tell all to leave my audio
-    socket.to(teamUUID).emit("disconnect-my-audio", socket.id)
-    // leave team to everyone
-    socket.broadcast.emit("player-left-team", {
-      socketID: socket.id,
-      teamID: teamUUID,
-    })
-  })
-
-  socket.on("create-team", (teamName, teamUUID) => {
-    // create a team with a team name and team uuid
-    // send out created team to all players
-    socket.broadcast.emit("team-created", {
-      teamName: teamName,
-      teamID: teamUUID,
-    })
-  })
-
-  socket.on("delete-team", (teamUUID) => {
-    // remove all players from team and delete room
-    io.sockets.clients(teamUUID).forEach((s) => {
-      s.leave(teamUUID)
-    })
-
-    // send out deleted team to all players
-    socket.broadcast.emit("team-deleted", {
-      teamID: teamUUID,
-    })
-  })
-
-  // HOST STUFF
-
-  socket.on("message-host", (msg) => {
-    socket.to("host").emit("private message", socket.id, msg)
-  })
-
-  socket.on("screen-to-host", (screenStream) => {
-    // send stream to host
-  })
-
-  socket.on("audio-to-host", (audioStream) => {
-    // send audio to host
-  })
-
-  socket.on("randomize-teams", () => {
-    // switch up all of the teams
-  })
-
-  socket.on("unmute-host-team", (teamUUID) => {
-    socket.to(teamUUID).emit("unmute-me", socket.id)
-  })
-
-  socket.on("unmute-host-all", () => {
-    socket.broadcast.emit("unmute-me", socket.id)
-  })
-
-  socket.on("mute-host", () => {
-    socket.broadcast.emit("mute-me", socket.id)
-  })
+  // Watch Mongo
 
   // DISCONNECT
 
   socket.on("disconnect", () => {
-    console.log("user disconnected")
+    console.log("user disconnected ", socket.handshake.auth.userId)
+    PrimaryUser.findOneAndUpdate(
+      {
+        _id: socket.handshake.auth.userId,
+      },
+      {
+        active: false,
+      }
+    ).then(() => {})
     io.emit("user-disconnected", { socketID: socket.id })
   })
 })
