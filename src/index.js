@@ -3,7 +3,6 @@ import http from "http"
 import cors from "cors"
 import { Server } from "socket.io"
 import mongoose from "mongoose"
-import mongoTop from "mongodb-topology-manager"
 
 // CONSTANTS
 const PORT = 4000
@@ -90,7 +89,7 @@ const PrimaryTeam = primary.model(
 //     connected-as
 //     add-user
 //     delete-user
-//     change-mute
+//     change-remote-mute
 //     add-team
 //     delete-team
 //     viewer-event-mute
@@ -160,8 +159,8 @@ io.on("connection", (socket) => {
     // save to mongo
     // broadcast add-user to all
   })
-  socket.on("change-mute", (data) => {
-    // broadcast to all
+  socket.on("change-remote-mute", (data) => {
+    socket.broadcast.emit(data)
   })
 
   // Watch Mongo
