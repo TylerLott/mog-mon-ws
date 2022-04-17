@@ -7,7 +7,7 @@ import mongoose from "mongoose"
 // CONSTANTS
 let PORT = 80
 let MONGO_PATH = "mongodb://172.31.91.101:27017/monday"
-let PATH = "/api/stepbrother"
+let PATH = "/api/stepbrother/socket.io"
 if (process.env.NODE_ENV !== "production") {
   PORT = 4000
   MONGO_PATH = "mongodb://localhost:27017/codesdb"
