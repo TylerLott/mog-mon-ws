@@ -8,6 +8,7 @@ import mongoose from "mongoose"
 let PORT = 80
 let MONGO_PATH = "mongodb://172.31.91.101:27017/monday"
 let PATH = "/api/stepbrother/socket.io"
+
 if (process.env.NODE_ENV !== "production") {
   PORT = 4000
   MONGO_PATH = "mongodb://localhost:27017/codesdb"
@@ -16,18 +17,21 @@ if (process.env.NODE_ENV !== "production") {
 
 // SERVER
 const app = express()
+const server = http.createServer(app)
 
+let io
 if (process.env.NODE_ENV !== "production") {
   app.use(cors)
+  io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+    path: PATH,
+  })
+} else {
+  io = new Server(server, { path: PATH })
 }
-const server = http.createServer(app)
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-  path: PATH,
-})
 app.io = io
 
 // MONGO STUFF
