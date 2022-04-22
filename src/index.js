@@ -7,6 +7,7 @@ import mongoose from "mongoose"
 // CONSTANTS
 let PORT = 80
 let MONGO_PATH = "mongodb://172.31.91.101:27017/monday"
+let MONGO_REPL_PATH = "mongodb://172.31.91.101:27018/monday"
 let PATH = "/api/stepbrother/socket.io"
 
 if (process.env.NODE_ENV !== "production") {
@@ -278,6 +279,28 @@ io.on("connection", (socket) => {
     //    - update players attributes (index by gamename)
     //    - send all (io.emit) player updates (active players only)
     console.log(file)
+  })
+
+  // Peer routing
+  socket.on("offer-created", (offer) => {
+    socket.to(offer.receiverId).emit("offer-received", offer)
+  })
+  socket.on("answer-created", (answer) => {
+    socket.to(answer.receiverId).emit("answer-received", answer)
+  })
+  socket.on("trickle-ice", (ice) => {
+    socket.to(ice.receiverId).emit("trickle-ice", ice)
+  })
+
+  // Video communication
+  socket.on("send-me-video", (action) => {
+    socket.to(action.receiverId).emit("send-video", action)
+  })
+  socket.on("i-sent-video", (action) => {
+    socket.to(action.receiverId).emit("sent-video", action)
+  })
+  socket.on("stop-video", (action) => {
+    socket.to(action.receiverId).emit("stop-video")
   })
 
   // DISCONNECT
