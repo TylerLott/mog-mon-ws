@@ -39,17 +39,16 @@ app.io = io
 let primary = mongoose.createConnection(MONGO_PATH, {
   useNewUrlParser: true,
 })
-// let repl = mongoose.createConnection("repl", { useNewUrlParser: true })
+let repl = mongoose.createConnection(MONGO_REPL_PATH, { useNewUrlParser: true })
 
-// const Event = repl.model(
-//   "Events",
-//   {
-//     _id: String,
-//     team: String,
-//     event: String,
-//   },
-//   "viewer-events"
-// )
+const ViewerEvents = repl.model(
+  "Events",
+  {
+    team: String,
+    active: Boolean,
+  },
+  "viewer-events"
+)
 
 const Room = primary.model("room", {
   name: { type: String },
@@ -73,10 +72,15 @@ const PrimaryTeam = primary.model("team", {
   players: [String],
 })
 
-// Event.watch().on("change", (data) => {
-//   console.log(data)
-//   // io.emit("viewer-event", data)
-// })
+ViewerEvents.watch().on("change", (data) => {
+  if (typeof data === "string" || data instanceof String) {
+    console.log("event change")
+  } else {
+    ViewerEvents.findOne({ active: true }).then((event) => {
+      io.emit("viewer-event", event)
+    })
+  }
+})
 
 ///////////////////////////////////////////////////////////////////
 // Socket Setup
