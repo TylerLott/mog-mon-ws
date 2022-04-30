@@ -40,7 +40,7 @@ let primary = mongoose.createConnection(MONGO_PATH, {
   useNewUrlParser: true,
 })
 let repl = mongoose.createConnection(MONGO_REPL_PATH, { useNewUrlParser: true })
-
+console.log("mongo connected")
 const ViewerEvents = repl.model(
   "Events",
   {
@@ -48,6 +48,15 @@ const ViewerEvents = repl.model(
     active: Boolean,
   },
   "viewer-events"
+)
+const SettingsRepl = repl.model(
+  "settings",
+  {
+    viewerTimeout: String,
+    threshold: String,
+    teamCooldown: String,
+  },
+  "settings"
 )
 
 const Room = primary.model("room", {
@@ -77,7 +86,13 @@ ViewerEvents.watch().on("change", (data) => {
     console.log("event change")
   } else {
     ViewerEvents.findOne({ active: true }).then((event) => {
-      io.emit("viewer-event", event)
+      if (event) {
+        PrimaryTeam.findOne({ team: event.team }).then((t) => {
+          t.players.forEach((player) => {
+            io.to(player).emit("viewer-event", event)
+          })
+        })
+      }
     })
   }
 })
